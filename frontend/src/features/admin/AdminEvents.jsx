@@ -220,7 +220,7 @@ export default function AdminEvents() {
                       Attendees
                     </Button>
                   </Link>
-                  {event.status === 'published' && (
+                  {event.status === 'published' && new Date(event.starts_at) > new Date() && (
                     <Button variant="danger" size="sm" onClick={() => setTarget(event)}>
                       <XCircle className="size-3.5" aria-hidden="true" />
                       Cancel

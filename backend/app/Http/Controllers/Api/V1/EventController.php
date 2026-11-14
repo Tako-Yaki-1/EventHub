@@ -18,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class EventController extends Controller
 {
@@ -128,10 +129,18 @@ class EventController extends Controller
     {
         Gate::authorize('delete', $event);
 
-        if ($event->status !== EventStatus::Cancelled) {
-            $event->update(['status' => EventStatus::Cancelled]);
-            $this->notifyAttendees($event);
+        if ($event->status === EventStatus::Cancelled) {
+            return response()->json(['message' => 'Event cancelled.']);
         }
+
+        if ($event->starts_at->isPast()) {
+            throw ValidationException::withMessages([
+                'event' => 'Only upcoming events can be cancelled.',
+            ]);
+        }
+
+        $event->update(['status' => EventStatus::Cancelled]);
+        $this->notifyAttendees($event);
 
         return response()->json(['message' => 'Event cancelled.']);
     }

@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\Registration;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -290,5 +291,45 @@ class RegistrationTest extends TestCase
             ->assertJsonCount(2, 'data')
             ->assertJsonFragment(['id' => $registered->id, 'status' => 'registered'])
             ->assertJsonFragment(['id' => $cancelled->id, 'status' => 'cancelled']);
+    }
+
+    public function test_my_registrations_are_ordered_by_event_date_then_cancellation_date(): void
+    {
+        $student = User::factory()->create();
+        Sanctum::actingAs($student);
+
+        $registeredLaterEvent = $this->registerFor($student, now()->addDays(10), now()->subDay());
+        $registeredSoonerEvent = $this->registerFor($student, now()->addDays(2), now()->subDays(5));
+        $cancelledOlder = $this->cancelFor($student, now()->subDays(4));
+        $cancelledNewer = $this->cancelFor($student, now()->subHour());
+
+        $this->getJson('/api/v1/my/registrations')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $registeredSoonerEvent->id)
+            ->assertJsonPath('data.1.id', $registeredLaterEvent->id)
+            ->assertJsonPath('data.2.id', $cancelledNewer->id)
+            ->assertJsonPath('data.3.id', $cancelledOlder->id);
+    }
+
+    private function registerFor(User $student, Carbon $startsAt, Carbon $registeredAt): Registration
+    {
+        $event = Event::factory()->create([
+            'starts_at' => $startsAt,
+            'ends_at' => $startsAt->copy()->addHours(2),
+        ]);
+
+        return Registration::factory()->create([
+            'user_id' => $student->id,
+            'event_id' => $event->id,
+            'registered_at' => $registeredAt,
+        ]);
+    }
+
+    private function cancelFor(User $student, Carbon $cancelledAt): Registration
+    {
+        return Registration::factory()->cancelled()->create([
+            'user_id' => $student->id,
+            'cancelled_at' => $cancelledAt,
+        ]);
     }
 }

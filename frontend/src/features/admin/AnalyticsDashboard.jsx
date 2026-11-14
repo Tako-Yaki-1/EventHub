@@ -13,6 +13,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -154,17 +155,42 @@ export default function AnalyticsDashboard() {
 
         <ChartCard
           title="Fill rate per upcoming event"
-          caption="Registered students against capacity. Bars near the top need no promotion; short bars do."
+          caption="Registered students against capacity — longest bars fill first, so short bars need promotion."
           empty={performance.length === 0}
         >
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <BarChart data={performance} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
+          <ResponsiveContainer
+            width="100%"
+            height={Math.max(chartHeight, performance.length * 34)}
+          >
+            <BarChart
+              data={performance}
+              layout="vertical"
+              margin={{ top: 4, right: 16, bottom: 0, left: 8 }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-card-border)" />
-              <XAxis dataKey="title" tick={axisTick} tickFormatter={shortTitle} />
-              <YAxis tick={axisTick} allowDecimals={false} />
+              <XAxis type="number" tick={axisTick} allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="title"
+                tick={axisTick}
+                tickFormatter={shortTitle}
+                interval={0}
+                width={130}
+              />
               <Tooltip />
-              <Bar dataKey="registered" name="Registered" fill="var(--color-primary)" />
-              <Bar dataKey="capacity" name="Capacity" fill="var(--color-tile)" />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar
+                dataKey="registered"
+                name="Registered"
+                fill="var(--color-primary)"
+                radius={[0, 4, 4, 0]}
+              />
+              <Bar
+                dataKey="capacity"
+                name="Capacity"
+                fill="var(--color-placeholder)"
+                radius={[0, 4, 4, 0]}
+              />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>

@@ -123,6 +123,18 @@ class EventManagementTest extends TestCase
         $this->deleteJson("/api/v1/events/{$event->id}")->assertOk();
     }
 
+    public function test_an_event_that_has_already_started_cannot_be_cancelled(): void
+    {
+        Sanctum::actingAs(User::factory()->admin()->create());
+        $event = Event::factory()->past()->create();
+
+        $this->deleteJson("/api/v1/events/{$event->id}")
+            ->assertStatus(422)
+            ->assertJsonPath('errors.event.0', 'Only upcoming events can be cancelled.');
+
+        $this->assertDatabaseHas('events', ['id' => $event->id, 'status' => 'published']);
+    }
+
     public function test_the_attendee_list_is_admin_only_and_uses_snapshots(): void
     {
         Sanctum::actingAs(User::factory()->admin()->create());

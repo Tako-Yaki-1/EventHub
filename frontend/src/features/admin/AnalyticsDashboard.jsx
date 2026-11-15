@@ -34,6 +34,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import Skeleton from '../../components/ui/Skeleton'
 import KpiCard from './KpiCard'
 import ChartCard from './ChartCard'
+import AiSummaryCard from './AiSummaryCard'
 
 const axisTick = { fontSize: 11, fill: 'var(--color-muted)' }
 const chartHeight = 240
@@ -102,8 +103,9 @@ export default function AnalyticsDashboard() {
         <p className="mt-1 text-sm text-muted">How your campus events are doing right now.</p>
       </div>
 
-      <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <KpiCard icon={CalendarDays} label="Total events" value={summary.total_events} />
+      <AiSummaryCard />
+
+      <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 lg:grid-cols-5">        <KpiCard icon={CalendarDays} label="Total events" value={summary.total_events} />
         <KpiCard
           icon={CalendarPlus}
           label="Upcoming events"

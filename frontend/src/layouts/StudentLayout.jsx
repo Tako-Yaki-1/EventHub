@@ -8,6 +8,7 @@ const tabs = [
   { label: 'Home', to: '/', end: true },
   { label: 'Events', to: '/events' },
   { label: 'My Registrations', to: '/my-registrations' },
+  { label: 'Ask AI', to: '/assistant' },
 ]
 
 export default function StudentLayout() {

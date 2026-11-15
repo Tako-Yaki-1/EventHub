@@ -7,6 +7,9 @@ import { useAuth } from '../features/auth/AuthContext'
 const tabs = [
   { label: 'Analytics', to: '/admin', end: true },
   { label: 'Events', to: '/admin/events' },
+  { label: 'AI', to: '/admin/ai' },
+  { label: 'Audit log', to: '/admin/audit' },
+  { label: 'Users', to: '/admin/users' },
 ]
 
 export default function AdminLayout() {

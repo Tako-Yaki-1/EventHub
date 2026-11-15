@@ -98,6 +98,23 @@ class ProfileTest extends TestCase
         ])->assertOk();
     }
 
+    public function test_changing_the_password_revokes_all_sessions(): void
+    {
+        $student = User::factory()->create(['password' => 'old-password']);
+        $student->createToken('web (Chrome on Windows)');
+        $student->createToken('web (Safari on macOS)');
+
+        Sanctum::actingAs($student);
+
+        $this->putJson('/api/v1/profile', [
+            'current_password' => 'old-password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])->assertOk();
+
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
     public function test_the_password_confirmation_must_match(): void
     {
         $student = User::factory()->create(['password' => 'old-password']);

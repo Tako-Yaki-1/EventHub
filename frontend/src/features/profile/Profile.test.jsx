@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '../../test/renderWithProviders'
 import Profile from './Profile'
 
+vi.mock('../../api/auth', () => ({
+  listSessions: vi.fn().mockResolvedValue([]),
+  revokeSession: vi.fn(),
+}))
+
 describe('Profile', () => {
   it('prefills the profile, omits blank passwords, and saves the details', async () => {
     const updateProfile = vi.fn().mockResolvedValue({})

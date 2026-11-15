@@ -32,5 +32,10 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="AI_DRIVER" value="fake"/>
+        <env name="AI_API_KEY" value=""/>
+        <env name="AI_MODEL" value="fake-model"/>
+        <env name="AI_BASE_URL" value=""/>
+        <env name="AI_LOG_PROMPTS" value="false"/>
     </php>
 </phpunit>

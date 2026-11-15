@@ -9,7 +9,7 @@ import { useAuth } from './AuthContext'
 import { errorMessage, fieldErrors } from '../../lib/errors'
 
 export default function Login() {
-  const { login } = useAuth()
+  const { login, sessionMessage } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const toast = useToast()
@@ -49,6 +49,12 @@ export default function Login() {
       <section className="rounded-card border border-card-border bg-welcome p-5">
         <h2 className="text-lg font-semibold text-ink">Welcome back</h2>
         <p className="mt-0.5 text-sm text-muted">Log in to register for campus events.</p>
+
+        {sessionMessage && (
+          <p role="status" className="mt-3 rounded-btn border border-danger-border bg-white px-3 py-2 text-sm text-danger">
+            {sessionMessage}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-4" noValidate>
           <Input

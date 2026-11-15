@@ -7,6 +7,7 @@ import { AuthContext } from './AuthContext'
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [sessionMessage, setSessionMessage] = useState(null)
 
   useEffect(() => {
     if (!getToken()) {
@@ -22,7 +23,11 @@ export default function AuthProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    const handleUnauthorized = () => setUser(null)
+    const handleUnauthorized = () => {
+      setUser(null)
+      setSessionMessage('Your session has expired. Please log in again.')
+    }
+
     window.addEventListener('auth:unauthorized', handleUnauthorized)
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
   }, [])
@@ -31,6 +36,7 @@ export default function AuthProvider({ children }) {
     const { token, user: loggedInUser } = await authApi.login(credentials)
     setToken(token)
     setUser(loggedInUser)
+    setSessionMessage(null)
     return loggedInUser
   }, [])
 
@@ -38,6 +44,7 @@ export default function AuthProvider({ children }) {
     const { token, user: newUser } = await authApi.register(payload)
     setToken(token)
     setUser(newUser)
+    setSessionMessage(null)
     return newUser
   }, [])
 
@@ -55,11 +62,12 @@ export default function AuthProvider({ children }) {
     }
     clearToken()
     setUser(null)
+    setSessionMessage(null)
   }, [])
 
   const value = useMemo(
-    () => ({ user, loading, login, register, updateProfile, logout }),
-    [user, loading, login, register, updateProfile, logout],
+    () => ({ user, loading, sessionMessage, login, register, updateProfile, logout }),
+    [user, loading, sessionMessage, login, register, updateProfile, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

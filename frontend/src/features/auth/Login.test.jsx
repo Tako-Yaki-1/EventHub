@@ -6,10 +6,12 @@ import { ToastProvider } from '../../components/ui/Toast'
 import { testUser } from '../../test/renderWithProviders'
 import Login from './Login'
 
-function renderLogin(login) {
+function renderLogin(login, auth = {}) {
   return render(
     <MemoryRouter initialEntries={['/login']}>
-      <AuthContext.Provider value={{ user: null, loading: false, login, logout: vi.fn() }}>
+      <AuthContext.Provider
+        value={{ user: null, loading: false, login, logout: vi.fn(), ...auth }}
+      >
         <ToastProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -45,8 +47,7 @@ describe('Login', () => {
     })
   })
 
-  it('shows the server message when the credentials are wrong', async () => {
-    const login = vi.fn().mockRejectedValue({
+  it('shows the server message when the credentials are wrong', async () => {    const login = vi.fn().mockRejectedValue({
       response: {
         status: 422,
         data: {
@@ -68,5 +69,15 @@ describe('Login', () => {
       (await screen.findAllByText('These credentials do not match our records.')).length,
     ).toBeGreaterThan(0)
     expect(screen.getByLabelText('Password')).toHaveValue('wrong')
+  })
+
+  it('explains why the user was sent back to the login page', () => {
+    renderLogin(vi.fn(), {
+      sessionMessage: 'Your session has expired. Please log in again.',
+    })
+
+    expect(
+      screen.getByText('Your session has expired. Please log in again.'),
+    ).toBeInTheDocument()
   })
 })

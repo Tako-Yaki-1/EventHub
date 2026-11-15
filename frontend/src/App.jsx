@@ -17,6 +17,10 @@ import AnalyticsDashboard from './features/admin/AnalyticsDashboard'
 import AdminEvents from './features/admin/AdminEvents'
 import AdminEventForm from './features/admin/AdminEventForm'
 import EventAttendees from './features/admin/EventAttendees'
+import AuditLog from './features/admin/AuditLog'
+import AdminUsers from './features/admin/AdminUsers'
+import AiSettings from './features/admin/AiSettings'
+import Assistant from './features/assistant/Assistant'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -35,6 +39,7 @@ export default function App() {
           <Route path="events" element={<Events />} />
           <Route path="events/:id" element={<EventDetails />} />
           <Route path="my-registrations" element={<MyRegistrations />} />
+          <Route path="assistant" element={<Assistant />} />
           <Route path="profile" element={<Profile />} />
           <Route path="notifications" element={<Notifications />} />
         </Route>
@@ -47,6 +52,9 @@ export default function App() {
           <Route path="admin/events/new" element={<AdminEventForm />} />
           <Route path="admin/events/:id/edit" element={<AdminEventForm />} />
           <Route path="admin/events/:id/attendees" element={<EventAttendees />} />
+          <Route path="admin/audit" element={<AuditLog />} />
+          <Route path="admin/users" element={<AdminUsers />} />
+          <Route path="admin/ai" element={<AiSettings />} />
         </Route>
       </Route>
 

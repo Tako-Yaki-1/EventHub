@@ -31,6 +31,7 @@ export function renderWithProviders(ui, { path = '/', route = '/', user = testUs
             value={{
               user,
               loading: false,
+              sessionMessage: null,
               login: vi.fn(),
               updateProfile: vi.fn(),
               logout: vi.fn(),

@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Middleware\EnsureRole;
+use App\Services\AuditLogger;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -18,5 +20,25 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // An audit trail matters most when someone is refused: record every 403.
+        $exceptions->respond(function (Response $response, Throwable $exception) {
+            if ($response->getStatusCode() === 403 && request()->user() !== null) {
+                try {
+                    app(AuditLogger::class)->record(
+                        'access.denied',
+                        'denied',
+                        user: request()->user(),
+                        metadata: [
+                            'method' => request()->method(),
+                            'path' => request()->path(),
+                        ],
+                        request: request(),
+                    );
+                } catch (Throwable) {
+                    // Auditing must never replace the original response.
+                }
+            }
+
+            return $response;
+        });
     })->create();

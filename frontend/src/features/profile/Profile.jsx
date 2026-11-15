@@ -5,6 +5,7 @@ import Input from '../../components/ui/Input'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage, fieldErrors } from '../../lib/errors'
 import { useAuth } from '../auth/AuthContext'
+import Sessions from './Sessions'
 
 const emptyPasswords = {
   current_password: '',
@@ -172,6 +173,8 @@ export default function Profile() {
           Save changes
         </Button>
       </form>
+
+      <Sessions />
     </div>
   )
 }

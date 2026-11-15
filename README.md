@@ -1,6 +1,6 @@
 # EventHub
 
-Campus event registration system: a Laravel JSON API (`backend/`) and a React + Vite app (`frontend/`). Students browse and register for events, cancel registrations, manage their profile and see in-app notifications; admins create and cancel events, see attendee lists, and read an analytics dashboard.
+Campus event registration system: a Laravel JSON API (`backend/`) and a React + Vite app (`frontend/`). Students browse and register for events, cancel registrations, manage their profile, see in-app notifications, and ask an AI assistant about upcoming events; admins create and cancel events, see attendee lists, read an analytics dashboard with an AI summary, manage users and sessions, and inspect an append-only audit log.
 
 ## What you need
 
@@ -38,7 +38,24 @@ DB_DATABASE=eventhub
 DB_USERNAME=root
 DB_PASSWORD=
 FRONTEND_URL=http://localhost:5173
+TOKEN_TTL_MINUTES=480
 ```
+
+### AI provider (optional)
+
+The AI features work without a key: they fall back to event search and a rule-based summary. To use a real model, put your own key and model in `backend\.env` (never commit them):
+
+```ini
+AI_DRIVER=openai
+AI_BASE_URL=https://openrouter.ai/api/v1
+AI_API_KEY=your-key-here
+AI_MODEL=openai/gpt-4o-mini
+AI_TIMEOUT_SECONDS=15
+AI_MAX_OUTPUT_TOKENS=500
+AI_LOG_PROMPTS=false
+```
+
+`openai` means any OpenAI-compatible endpoint: OpenRouter (default), Groq, Gemini's compatibility endpoint, or a local Ollama server. Use `AI_DRIVER=anthropic` for `api.anthropic.com`. Admins can switch features on or off and set the daily token budget on `/admin/ai`; the key is never sent to the browser.
 
 Create the database (XAMPP: open phpMyAdmin, or run `mysql -u root -e "CREATE DATABASE eventhub"`), then:
 
@@ -65,13 +82,20 @@ The API URL comes from `VITE_API_URL` in `frontend\.env` (default `http://localh
 Open `http://localhost:5173` and log in with one of the demo accounts below.
 
 ## Demo accounts
-
 | Role | Login | Password |
 |---|---|---|
 | Admin | `admin@eventhub.test` | `password` |
 | Student | `jan.nino@school.edu` or `2023-00123` | `password` |
 
 Seeded data is relative to the day you seed: three named events plus several upcoming and past events, about 60 students, and registrations/cancellations spread over 30 days.
+
+## Security and AI
+
+- [`docs/SECURITY.md`](docs/SECURITY.md) maps every control — CIA triad, accountability/audit log, tokens, admin role matrix, AI risks — to the code and the test that proves it.
+- New admin pages: `/admin/ai` (AI switches, per-user daily token budget, usage charts), `/admin/audit` (filterable append-only log with "Verify log"), and `/admin/users` (active sessions and force logout).
+- Students get `/assistant` ("Ask AI"); admins get an "AI summary" card on the analytics dashboard.
+- Login tokens expire after `TOKEN_TTL_MINUTES` and can be revoked from the profile page. The token lives in `localStorage` — see known limits in `docs/SECURITY.md`.
+- AI answers are plainly labelled "AI-generated", rendered as text, and fall back to event search / rule-based insights when AI is off, unconfigured, or failing.
 
 ## Running it with XAMPP
 
@@ -179,13 +203,14 @@ backend/app
   Http/Controllers   thin JSON controllers
   Http/Requests      validation
   Http/Resources     response shapes
-  Models/            User, Event, Registration, Notification
+  Models/            User, Event, Registration, Notification, AuditLog, AiRequest, Setting
   Policies/          admin event actions, owner-only cancel
-  Services/          analytics SQL aggregation
+  Services/          analytics SQL aggregation, audit log, tokens, AI drivers/gateway
+docs/SECURITY.md     security and AI design, controls, tests, known limits
 frontend/src
   api/               one module per resource (all HTTP lives here)
   components/        shared UI kit and route guards
-  features/          auth, home, events, registrations, profile, notifications, admin
+  features/          auth, home, events, registrations, profile, notifications, assistant, admin
   layouts/           student and admin shells
 ```
 
@@ -203,6 +228,8 @@ frontend/src
 
 - Dates are stored UTC and displayed in the browser's local timezone.
 - Access tokens are kept in `localStorage` and sent as a Bearer header; an XSS bug on the site would expose them.
+- AI is optional. Without `AI_API_KEY` and `AI_MODEL`, the assistant returns matching events and the analytics card returns a rule-based summary; both are labelled. Prompts are not stored unless `AI_LOG_PROMPTS=true`.
+- The AI summary is cached for 10 minutes per data fingerprint and only when the model answered; a rule-based fallback is recomputed on every request.
 - Notifications are database-only (no email or push).
 - Only published events that have not started yet can be cancelled. The admin Events list hides the button for past events, and the API rejects the request with `422` ("Only upcoming events can be cancelled.") so the UI is not the only protection.
 - My Registrations is ordered by the server: active registrations first by event date (soonest first), then cancelled ones (most recently cancelled first).

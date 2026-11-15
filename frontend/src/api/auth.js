@@ -19,6 +19,15 @@ export async function logout() {
   await api.post('/auth/logout')
 }
 
+export async function listSessions() {
+  const { data } = await api.get('/auth/sessions')
+  return data.data
+}
+
+export async function revokeSession(id) {
+  await api.delete(`/auth/sessions/${id}`)
+}
+
 export async function forgotPassword(email) {
   const { data } = await api.post('/auth/forgot-password', { email })
   return data.message

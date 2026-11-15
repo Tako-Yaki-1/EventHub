@@ -10,6 +10,7 @@ use App\Http\Requests\StoreRegistrationRequest;
 use App\Http\Resources\RegistrationResource;
 use App\Models\Event;
 use App\Models\Registration;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -39,8 +40,18 @@ class RegistrationController extends Controller
         StoreRegistrationRequest $request,
         Event $event,
         RegisterForEvent $registerForEvent,
+        AuditLogger $audit,
     ): JsonResponse {
         $registration = $registerForEvent->handle($event, $request->user(), $request->validated());
+
+        $audit->record(
+            'registration.created',
+            user: $request->user(),
+            entityType: Registration::class,
+            entityId: $registration->id,
+            metadata: ['event_id' => $event->id],
+            request: $request,
+        );
 
         return response()->json([
             'message' => 'You are registered.',
@@ -49,12 +60,23 @@ class RegistrationController extends Controller
     }
 
     public function destroy(
+        Request $request,
         Registration $registration,
         CancelRegistration $cancelRegistration,
+        AuditLogger $audit,
     ): JsonResponse {
         Gate::authorize('cancel', $registration);
 
         $registration = $cancelRegistration->handle($registration);
+
+        $audit->record(
+            'registration.cancelled',
+            user: $request->user(),
+            entityType: Registration::class,
+            entityId: $registration->id,
+            metadata: ['event_id' => $registration->event_id],
+            request: $request,
+        );
 
         return response()->json([
             'message' => 'Registration cancelled.',

@@ -14,6 +14,7 @@ use App\Http\Resources\EventResource;
 use App\Http\Resources\RegistrationResource;
 use App\Models\Event;
 use App\Models\Notification;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -94,7 +95,7 @@ class EventController extends Controller
         ]);
     }
 
-    public function store(StoreEventRequest $request): JsonResponse
+    public function store(StoreEventRequest $request, AuditLogger $audit): JsonResponse
     {
         Gate::authorize('create', Event::class);
 
@@ -103,13 +104,22 @@ class EventController extends Controller
             'status' => EventStatus::Published,
         ])->loadCount('registrations as registered_count');
 
+        $audit->record(
+            'event.created',
+            user: $request->user(),
+            entityType: Event::class,
+            entityId: $event->id,
+            metadata: ['status' => $event->status->value],
+            request: $request,
+        );
+
         return response()->json([
             'message' => 'Event created.',
             'data' => (new EventResource($event))->resolve(),
         ], 201);
     }
 
-    public function update(UpdateEventRequest $request, Event $event): JsonResponse
+    public function update(UpdateEventRequest $request, Event $event, AuditLogger $audit): JsonResponse
     {
         Gate::authorize('update', $event);
 
@@ -119,13 +129,24 @@ class EventController extends Controller
                 ->where('status', RegistrationStatus::Registered->value),
         ]);
 
+        $audit->record(
+            'event.updated',
+            user: $request->user(),
+            entityType: Event::class,
+            entityId: $event->id,
+            metadata: [
+                'changed' => array_values(array_diff(array_keys($event->getChanges()), ['updated_at'])),
+            ],
+            request: $request,
+        );
+
         return response()->json([
             'message' => 'Event updated.',
             'data' => (new EventResource($event))->resolve(),
         ]);
     }
 
-    public function destroy(Event $event): JsonResponse
+    public function destroy(Request $request, Event $event, AuditLogger $audit): JsonResponse
     {
         Gate::authorize('delete', $event);
 
@@ -141,6 +162,15 @@ class EventController extends Controller
 
         $event->update(['status' => EventStatus::Cancelled]);
         $this->notifyAttendees($event);
+
+        $audit->record(
+            'event.cancelled',
+            user: $request->user(),
+            entityType: Event::class,
+            entityId: $event->id,
+            metadata: ['status' => EventStatus::Cancelled->value],
+            request: $request,
+        );
 
         return response()->json(['message' => 'Event cancelled.']);
     }
@@ -168,7 +198,7 @@ class EventController extends Controller
         }
     }
 
-    public function attendees(ListAttendeesRequest $request, Event $event): AnonymousResourceCollection
+    public function attendees(ListAttendeesRequest $request, Event $event, AuditLogger $audit): AnonymousResourceCollection
     {
         Gate::authorize('viewAttendees', $event);
 
@@ -179,6 +209,15 @@ class EventController extends Controller
             ->when($status !== 'all', fn ($query) => $query->where('status', $status))
             ->orderBy('full_name')
             ->paginate($filters['per_page'] ?? 20);
+
+        $audit->record(
+            'event.attendees_viewed',
+            user: $request->user(),
+            entityType: Event::class,
+            entityId: $event->id,
+            metadata: ['status' => $status],
+            request: $request,
+        );
 
         return RegistrationResource::collection($registrations);
     }

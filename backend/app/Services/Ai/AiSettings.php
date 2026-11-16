@@ -39,6 +39,11 @@ class AiSettings
 
     public function enabledFor(string $feature): bool
     {
+        // The connection test only needs the master switch; the feature switches must not block it.
+        if ($feature === 'ai_test') {
+            return (bool) $this->get('ai.enabled');
+        }
+
         $flag = $feature === 'assistant' ? 'ai.assistant_enabled' : 'ai.summary_enabled';
 
         return (bool) $this->get('ai.enabled') && (bool) $this->get($flag);

@@ -58,6 +58,28 @@ class AiAssistantTest extends TestCase
             ->assertJsonCount(0, 'events');
     }
 
+    public function test_json_inside_code_fences_or_a_short_preamble_is_accepted(): void
+    {
+        $event = Event::factory()->create();
+
+        $this->fake()->replies = [
+            "```json\n{\"answer\":\"From a fence.\",\"event_ids\":[{$event->id}]}\n```",
+            'Here you go: {"answer":"From a preamble.","event_ids":[]}',
+        ];
+
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/v1/ai/assistant', ['question' => 'Fenced?'])
+            ->assertOk()
+            ->assertJsonPath('answer', 'From a fence.')
+            ->assertJsonPath('event_ids', [$event->id]);
+
+        $this->postJson('/api/v1/ai/assistant', ['question' => 'Preamble?'])
+            ->assertOk()
+            ->assertJsonPath('answer', 'From a preamble.')
+            ->assertJsonPath('event_ids', []);
+    }
+
     public function test_html_and_script_in_model_output_stays_plain_text(): void
     {
         $this->fake()->replies = [

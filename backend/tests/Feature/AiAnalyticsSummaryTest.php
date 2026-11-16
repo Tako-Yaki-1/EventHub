@@ -105,6 +105,19 @@ class AiAnalyticsSummaryTest extends TestCase
             ->assertJsonCount(3, 'actions');
     }
 
+    public function test_a_fenced_json_summary_is_accepted(): void
+    {
+        $this->seedDashboard();
+        $this->fake()->replies = ["```json\n".$this->validReply()."\n```"];
+
+        Sanctum::actingAs(User::factory()->admin()->create());
+
+        $this->postJson('/api/v1/admin/ai/analytics-summary')
+            ->assertOk()
+            ->assertJsonPath('source', 'ai')
+            ->assertJsonCount(3, 'findings');
+    }
+
     public function test_a_summary_with_too_few_points_falls_back_to_the_rules(): void
     {
         $this->seedDashboard();

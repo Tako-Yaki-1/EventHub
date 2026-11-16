@@ -251,7 +251,7 @@ export default function AdminEventForm() {
             </Button>
           </div>
 
-          {isEdit && event?.status === 'published' && (
+          {isEdit && event?.status === 'published' && new Date(event.starts_at) > new Date() && (
             <Button variant="danger" onClick={() => setConfirmingCancel(true)}>
               Cancel event
             </Button>

@@ -100,11 +100,11 @@ export default function Sessions() {
                       ? ` · Last used ${formatDateTime(session.last_used_at)}`
                       : ' · Not used yet'}
                   </p>
-                  <p className="text-xs text-muted">
-                    {session.expires_at
-                      ? `Expires ${formatDateTime(session.expires_at)}`
-                      : 'No expiry set (older session)'}
-                  </p>
+                  {session.expires_at && (
+                    <p className="text-xs text-muted">
+                      Expires {formatDateTime(session.expires_at)}
+                    </p>
+                  )}
                 </div>
               </div>
               <Button

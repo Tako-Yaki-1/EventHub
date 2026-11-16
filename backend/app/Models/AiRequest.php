@@ -24,6 +24,8 @@ class AiRequest extends Model
         'latency_ms',
         'status',
         'error_code',
+        'http_status',
+        'error_message',
         'prompt_chars',
         'prompt_hash',
         'prompt',
@@ -41,6 +43,7 @@ class AiRequest extends Model
             'total_tokens' => 'integer',
             'tokens_estimated' => 'boolean',
             'latency_ms' => 'integer',
+            'http_status' => 'integer',
             'prompt_chars' => 'integer',
             'created_at' => 'datetime',
         ];

@@ -59,7 +59,7 @@ PROMPT;
             return $this->fallback($user, $question);
         }
 
-        $decoded = json_decode((string) $result->text, true);
+        $decoded = AiJson::decode((string) $result->text);
         $answer = is_array($decoded) && is_string($decoded['answer'] ?? null)
             ? $decoded['answer']
             : (string) $result->text;

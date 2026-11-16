@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateAiSettingsRequest;
 use App\Models\AiRequest;
 use App\Models\User;
+use App\Services\Ai\AiGateway;
 use App\Services\Ai\AiSettings;
 use App\Services\Ai\AnalyticsSummaryService;
 use App\Services\AuditLogger;
@@ -140,6 +141,25 @@ class AdminAiController extends Controller
         return response()->json($result);
     }
 
+    public function test(Request $request, AiGateway $ai): JsonResponse
+    {
+        $result = $ai->call(
+            $request->user(),
+            'ai_test',
+            'Reply with the single word OK.',
+            [['role' => 'user', 'content' => 'Reply with the single word OK.']],
+            20,
+        );
+
+        return response()->json([
+            'ok' => $result->successful(),
+            'error_code' => $result->errorCode,
+            'http_status' => $result->httpStatus,
+            'latency_ms' => $result->latencyMs,
+            'model' => (string) config('ai.model'),
+        ]);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -156,6 +176,34 @@ class AdminAiController extends Controller
             'configured' => in_array(config('ai.driver'), ['anthropic', 'openai'], true)
                 && filled(config('ai.api_key'))
                 && filled(config('ai.model')),
+            'last_error' => $this->lastError(),
+        ];
+    }
+
+    /**
+     * The most recent provider-side failure, for the admin status line.
+     *
+     * @return array{code: string, http_status: int|null, message: string|null, at: string|null}|null
+     */
+    private function lastError(): ?array
+    {
+        $row = AiRequest::query()
+            ->whereIn('error_code', [
+                'auth_failed', 'model_not_found', 'rate_limited_upstream', 'provider_error',
+                'bad_request', 'timeout', 'invalid_response', 'empty_response',
+            ])
+            ->latest('id')
+            ->first();
+
+        if ($row === null) {
+            return null;
+        }
+
+        return [
+            'code' => (string) $row->error_code,
+            'http_status' => $row->http_status,
+            'message' => $row->error_message,
+            'at' => $row->created_at?->toIso8601String(),
         ];
     }
 }

@@ -1,6 +1,6 @@
 # EventHub
 
-Campus event registration system: a Laravel JSON API (`backend/`) and a React + Vite app (`frontend/`). Students browse and register for events, cancel registrations, manage their profile, see in-app notifications, and ask an AI assistant about upcoming events; admins create and cancel events, see attendee lists, read an analytics dashboard with an AI summary, manage users and sessions, and inspect an append-only audit log.
+Campus event registration system: a Laravel JSON API (`backend/`) and a React + Vite app (`frontend/`). Students browse and register for events, cancel registrations, manage their profile, see in-app notifications, and ask an AI assistant about upcoming events — from the "Ask AI" tab or the floating chat button on every student page; admins create and cancel events, see attendee lists, read an analytics dashboard with an AI summary, manage users and sessions, and inspect an append-only audit log.
 
 ## What you need
 
@@ -55,7 +55,9 @@ AI_MAX_OUTPUT_TOKENS=500
 AI_LOG_PROMPTS=false
 ```
 
-`openai` means any OpenAI-compatible endpoint: OpenRouter (default), Groq, Gemini's compatibility endpoint, or a local Ollama server. Use `AI_DRIVER=anthropic` for `api.anthropic.com`. Admins can switch features on or off and set the daily token budget on `/admin/ai`; the key is never sent to the browser.
+`openai` means any OpenAI-compatible endpoint: OpenRouter (default), Groq, Gemini's compatibility endpoint, or a local Ollama server. Use `AI_DRIVER=anthropic` for `api.anthropic.com`. Admins can switch features on or off and set the daily token budget on `/admin/ai`; the key is never sent to the browser. The same page shows the driver, model, configuration status, the last provider error (code, HTTP status, time), and a **Test connection** button that sends one tiny prompt.
+
+A base URL may end with `/v1`, a trailing slash, or the full `/chat/completions` path. With OpenRouter, the API sends the `HTTP-Referer` (from `FRONTEND_URL`) and `X-Title: EventHub` headers.
 
 Create the database (XAMPP: open phpMyAdmin, or run `mysql -u root -e "CREATE DATABASE eventhub"`), then:
 
@@ -92,8 +94,9 @@ Seeded data is relative to the day you seed: three named events plus several upc
 ## Security and AI
 
 - [`docs/SECURITY.md`](docs/SECURITY.md) maps every control — CIA triad, accountability/audit log, tokens, admin role matrix, AI risks — to the code and the test that proves it.
-- New admin pages: `/admin/ai` (AI switches, per-user daily token budget, usage charts), `/admin/audit` (filterable append-only log with "Verify log"), and `/admin/users` (active sessions and force logout).
-- Students get `/assistant` ("Ask AI"); admins get an "AI summary" card on the analytics dashboard.
+- New admin pages: `/admin/ai` (AI switches, per-user daily token budget, connection status, Test connection, usage charts), `/admin/audit` (filterable append-only log with "Verify log"), and `/admin/users` (active sessions and force logout).
+- Students get `/assistant` ("Ask AI") plus a floating chat button on every student page (not on the assistant page, the auth pages, or admin pages). The panel keeps its conversation only in React state; it is cleared on logout and by "New chat". Admins get an "AI summary" card on the analytics dashboard.
+- Provider failures are classified (`not_configured`, `auth_failed`, `model_not_found`, `rate_limited_upstream`, `provider_error`, `bad_request`, `timeout`, `invalid_response`, `empty_response`) and stored on the usage row. Students still see only the friendly fallback.
 - Login tokens expire after `TOKEN_TTL_MINUTES` and can be revoked from the profile page. The token lives in `localStorage` — see known limits in `docs/SECURITY.md`.
 - AI answers are plainly labelled "AI-generated", rendered as text, and fall back to event search / rule-based insights when AI is off, unconfigured, or failing.
 
@@ -222,7 +225,13 @@ frontend/src
 - **`Unknown database 'eventhub'`.** Create the database first; `migrate` does not create it.
 - **Port already in use.** Stop the other process, or run `php artisan serve --port=8001` (then update `VITE_API_URL`) and `npm run dev -- --port=5174` (then update `FRONTEND_URL`).
 - **Reset email never arrives.** That is expected: mail is written to `backend\storage\logs\laravel.log`.
-- **Changes to `backend\.env` have no effect.** Run `php artisan config:clear`.
+- **AI always says it is unavailable, or the assistant only returns matching events.** The app falls back whenever the provider is not configured or rejects the call. Check, in order:
+  1. `AI_API_KEY` and `AI_MODEL` are set in `backend\.env` (never commit them), and `AI_BASE_URL` matches the provider.
+  2. After editing `backend\.env`, run `php artisan config:clear` and then restart `php artisan serve`. Laravel caches config, so a running server keeps the old values.
+  3. Log in as an admin, open `/admin/ai`, and click **Test connection**. It shows `ok`, the latency, and the model, or the error code and HTTP status. The last provider error is shown there as well, with a hint for each code.
+  4. If the error is `auth_failed`, the key is wrong or expired. `model_not_found` means `AI_MODEL` is not a valid model id for that provider. `rate_limited_upstream` means the provider is throttling the key. `timeout` means the provider did not answer within `AI_TIMEOUT_SECONDS`.
+- **A student never sees AI provider errors.** That is intended: they get the friendly fallback plus matching events. Diagnose from `/admin/ai`.
+- **Changes to `backend\.env` have no effect.** Run `php artisan config:clear` and restart `php artisan serve`.
 
 ## Notes and limits
 
@@ -231,7 +240,9 @@ frontend/src
 - AI is optional. Without `AI_API_KEY` and `AI_MODEL`, the assistant returns matching events and the analytics card returns a rule-based summary; both are labelled. Prompts are not stored unless `AI_LOG_PROMPTS=true`.
 - The AI summary is cached for 10 minutes per data fingerprint and only when the model answered; a rule-based fallback is recomputed on every request.
 - Notifications are database-only (no email or push).
-- Only published events that have not started yet can be cancelled. The admin Events list hides the button for past events, and the API rejects the request with `422` ("Only upcoming events can be cancelled.") so the UI is not the only protection.
-- My Registrations is ordered by the server: active registrations first by event date (soonest first), then cancelled ones (most recently cancelled first).
+- Only published events that have not started yet can be cancelled. The admin Events list and the edit page hide the button once the event has started, and the API rejects the request with `422` ("Only upcoming events can be cancelled.") so the UI is not the only protection.
+- My Registrations is split by the server into Upcoming, Past, and Cancelled sections, each paginated on its own. Upcoming is soonest first, Past is most recent first, and Cancelled is most recently cancelled first. Past and cancelled items never show a Cancel button.
+- Existing login tokens that were issued before the expiry feature get `expires_at` from their `created_at` plus `TOKEN_TTL_MINUTES` in the `2026_11_16_000002` migration. The profile page only prints an expiry line when one exists.
+- The floating assistant panel keeps its conversation in React state only. It is not stored in the browser and it is cleared when another user logs in or "New chat" is pressed.
 - The analytics bundle includes `recharts`; the production build is one ~800 kB chunk with an advisory size warning.
 - The test suite runs on in-memory SQLite; the app itself was verified against MySQL 8 (XAMPP) as well, including migrations, seeding, registrations, and the analytics endpoints.

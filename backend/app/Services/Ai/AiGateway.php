@@ -6,6 +6,7 @@ use App\Contracts\AiClient;
 use App\Models\AiRequest;
 use App\Models\User;
 use App\Services\AuditLogger;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
 
@@ -22,8 +23,17 @@ class AiGateway
      *
      * @param  list<array{role: string, content: string}>  $messages
      */
-    public function call(User $user, string $feature, string $system, array $messages): AiCallResult
-    {
+    public function call(
+        User $user,
+        string $feature,
+        string $system,
+        array $messages,
+        ?int $maxOutputTokens = null,
+    ): AiCallResult {
+        $startedAt = hrtime(true);
+        $elapsedMs = fn () => (int) round((hrtime(true) - $startedAt) / 1_000_000);
+        $maxOutputTokens ??= (int) config('ai.max_output_tokens', 500);
+
         $prompt = $system.collect($messages)->pluck('content')->implode('');
         $promptChars = mb_strlen($prompt);
         $promptHash = hash('sha256', $prompt);
@@ -40,24 +50,49 @@ class AiGateway
             return $this->record(
                 $user, $feature, 'rate_limited', 'rate_limited', $prompt, $promptChars, $promptHash,
                 message: 'Too many AI requests. Try again in a minute.',
+                latencyMs: $elapsedMs(),
             );
         }
 
-        if ($this->overDailyLimit($user, $promptChars)) {
+        if ($this->overDailyLimit($user, $promptChars, $maxOutputTokens)) {
             return $this->record(
                 $user, $feature, 'blocked', 'daily_token_limit', $prompt, $promptChars, $promptHash,
                 message: 'You have reached your daily AI limit. Try again tomorrow.',
+                latencyMs: $elapsedMs(),
             );
         }
 
         try {
-            $response = $this->client->complete(
-                $system,
-                $messages,
-                (int) config('ai.max_output_tokens', 500),
+            $response = $this->client->complete($system, $messages, $maxOutputTokens);
+        } catch (AiProviderException $exception) {
+            Log::warning('AI provider call failed', [
+                'feature' => $feature,
+                'driver' => config('ai.driver'),
+                'model' => config('ai.model'),
+                'error_code' => $exception->errorCode,
+                'http_status' => $exception->httpStatus,
+                'provider_message' => $exception->getMessage(),
+            ]);
+
+            return $this->record(
+                $user, $feature, 'fallback', $exception->errorCode, $prompt, $promptChars, $promptHash,
+                httpStatus: $exception->httpStatus,
+                providerMessage: $exception->getMessage(),
+                latencyMs: $elapsedMs(),
             );
-        } catch (Throwable) {
-            return $this->record($user, $feature, 'fallback', 'provider_error', $prompt, $promptChars, $promptHash);
+        } catch (Throwable $exception) {
+            Log::warning('AI provider call failed', [
+                'feature' => $feature,
+                'driver' => config('ai.driver'),
+                'model' => config('ai.model'),
+                'error_code' => 'provider_error',
+                'exception' => $exception::class,
+            ]);
+
+            return $this->record(
+                $user, $feature, 'fallback', 'provider_error', $prompt, $promptChars, $promptHash,
+                latencyMs: $elapsedMs(),
+            );
         }
 
         return $this->record(
@@ -82,9 +117,9 @@ class AiGateway
     /**
      * The request costs at least its prompt estimate plus the output ceiling.
      */
-    private function overDailyLimit(User $user, int $promptChars): bool
+    private function overDailyLimit(User $user, int $promptChars, int $maxOutputTokens): bool
     {
-        $estimate = (int) ceil($promptChars / 4) + (int) config('ai.max_output_tokens', 500);
+        $estimate = (int) ceil($promptChars / 4) + $maxOutputTokens;
 
         return $this->tokensUsedToday($user) + $estimate > $this->settings->dailyTokenLimit();
     }
@@ -126,11 +161,16 @@ class AiGateway
         string $promptHash,
         ?array $usage = null,
         ?string $message = null,
+        ?int $httpStatus = null,
+        ?string $providerMessage = null,
+        ?int $latencyMs = null,
     ): AiCallResult {
         $inputTokens = $usage['input_tokens'] ?? 0;
         $outputTokens = $usage['output_tokens'] ?? 0;
         $totalTokens = $inputTokens + $outputTokens;
         $estimated = (bool) ($usage['tokens_estimated'] ?? false);
+        $latency = $usage['latency_ms'] ?? $latencyMs ?? 0;
+        $httpStatus ??= $status === 'success' ? 200 : null;
 
         AiRequest::create([
             'user_id' => $user->id,
@@ -141,9 +181,11 @@ class AiGateway
             'output_tokens' => $outputTokens,
             'total_tokens' => $totalTokens,
             'tokens_estimated' => $estimated,
-            'latency_ms' => $usage['latency_ms'] ?? 0,
+            'latency_ms' => $latency,
             'status' => $status,
             'error_code' => $errorCode,
+            'http_status' => $httpStatus,
+            'error_message' => $providerMessage,
             'prompt_chars' => $promptChars,
             'prompt_hash' => $promptHash,
             'prompt' => config('ai.log_prompts') ? $prompt : null,
@@ -151,7 +193,7 @@ class AiGateway
         ]);
 
         $this->audit->record(
-            'ai.request',
+            $feature === 'ai_test' ? 'ai.test' : 'ai.request',
             $status === 'success' ? 'success' : ($status === 'fallback' ? 'failed' : 'denied'),
             user: $user,
             metadata: [
@@ -162,9 +204,17 @@ class AiGateway
                 'total_tokens' => $totalTokens,
                 'tokens_estimated' => $estimated,
                 'error_code' => $errorCode,
+                'http_status' => $httpStatus,
             ],
         );
 
-        return new AiCallResult($status, $usage['text'] ?? null, $errorCode, $message);
+        return new AiCallResult(
+            $status,
+            $usage['text'] ?? null,
+            $errorCode,
+            $message,
+            $httpStatus,
+            $latency,
+        );
     }
 }

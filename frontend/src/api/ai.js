@@ -20,6 +20,11 @@ export async function updateAiSettings(values) {
   return data
 }
 
+export async function testAiConnection() {
+  const { data } = await api.post('/admin/ai/test')
+  return data
+}
+
 export async function getAiUsage(days = 30) {
   const { data } = await api.get('/admin/ai/usage', { params: { days } })
   return data

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -201,6 +202,31 @@ class TokenSessionTest extends TestCase
         $log = AuditLog::query()->where('action', 'auth.session_revoked')->firstOrFail();
         $this->assertSame($user->id, $log->user_id);
         $this->assertSame('web', $log->metadata['name']);
+    }
+
+    public function test_the_backfill_migration_gives_old_tokens_an_expiry_from_created_at(): void
+    {
+        config(['security.token_ttl_minutes' => 60]);
+
+        $user = User::factory()->create();
+        $old = $user->createToken('old', ['*'], null)->accessToken;
+        $old->forceFill(['created_at' => now()->subHours(2)])->save();
+
+        $kept = $user->createToken('kept', ['*'], now()->addDay())->accessToken;
+        $keptExpiry = $kept->expires_at;
+
+        $migration = require database_path('migrations/2026_11_16_000002_backfill_personal_access_token_expiry.php');
+        $migration->up();
+
+        $old->refresh();
+        $kept->refresh();
+
+        $this->assertNotNull($old->expires_at);
+        $this->assertTrue($old->expires_at->between(
+            Carbon::parse($old->created_at)->addMinutes(59),
+            Carbon::parse($old->created_at)->addMinutes(61),
+        ));
+        $this->assertTrue($kept->expires_at->equalTo($keptExpiry));
     }
 
     public function test_the_sessions_endpoint_is_rate_limited(): void

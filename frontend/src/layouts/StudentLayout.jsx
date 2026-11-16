@@ -3,6 +3,7 @@ import { LogOut } from 'lucide-react'
 import Logo from '../components/ui/Logo'
 import Tabs from '../components/ui/Tabs'
 import { useAuth } from '../features/auth/AuthContext'
+import AssistantWidget from '../features/assistant/AssistantWidget'
 
 const tabs = [
   { label: 'Home', to: '/', end: true },
@@ -62,6 +63,7 @@ export default function StudentLayout() {
       <main className="mx-auto max-w-3xl px-4 py-6">
         <Outlet />
       </main>
+      <AssistantWidget />
     </div>
   )
 }

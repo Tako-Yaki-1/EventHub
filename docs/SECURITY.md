@@ -18,7 +18,7 @@ How EventHub covers the CIA triad, accountability, tokens, admin controls, and t
 | Integrity | Registration and cancellation stay transactional | `RegisterForEvent`, `CancelRegistration` | `RegistrationTest` |
 | Integrity | AI output is parsed defensively: JSON shape checked, unknown event ids dropped, raw text used when parsing fails | `AssistantService`, `AnalyticsSummaryService` | `AiAssistantTest`, `AiAnalyticsSummaryTest` |
 | Integrity | Registration and event writes cannot be triggered by the model (it has no tools) | `AssistantService` (read-only prompt) | `AiAssistantTest` |
-| Availability | Login, sign-up, password reset, sessions, admin views, and AI calls are rate limited | `routes/api.php`, `AiGateway::rateLimited` | `TokenSessionTest` (sessions 429), `AiAssistantTest` (AI 429) |
+| Availability | Login, sign-up, password reset, sessions, admin views, AI calls, and the AI connection test are rate limited | `routes/api.php`, `AiGateway::rateLimited` | `TokenSessionTest` (sessions 429), `AiAssistantTest` (AI 429), `AiAdminTest` (test endpoint admin-only) |
 | Availability | Per-user daily AI token budget blocks spend before the provider call | `AiGateway::overDailyLimit`, `AiSettings` | `AiAssistantTest` ("daily token limit...") |
 | Availability | AI is optional: disabled/unconfigured/error/timeout uses local fallbacks; the app never crashes | `AiGateway`, `AssistantService`, `AnalyticsSummaryService`, `NullAiDriver` | `AiAssistantTest`, `AiAnalyticsSummaryTest` |
 | Availability | Indexes on audit and AI usage columns; AI-generated summaries cached for 10 minutes per data fingerprint (rule-based fallbacks are not cached, so recovering AI is immediate) | Migrations, `AnalyticsSummaryService` | Migration review, `AiAnalyticsSummaryTest` (cache test) |
@@ -33,7 +33,7 @@ How EventHub covers the CIA triad, accountability, tokens, admin controls, and t
 - `profile.updated` (field names only, not values)
 - `event.created`, `event.updated`, `event.cancelled`, `event.attendees_viewed`
 - `registration.created`, `registration.cancelled`
-- `ai.request` (feature, status, token counts), `ai.settings_changed` (changed field names with old and new values)
+- `ai.request` (feature, status, token counts), `ai.test` (the admin Test connection call), `ai.settings_changed` (changed field names with old and new values)
 - `access.denied` for every 403 by a signed-in user (method and path)
 - `admin.audit_verified` when an admin runs the chain check
 
@@ -57,12 +57,15 @@ How EventHub covers the CIA triad, accountability, tokens, admin controls, and t
 - `GET /api/v1/auth/sessions` lists the caller's active tokens (id, name, created/last used/expires, `is_current`) and never token values.
 - `DELETE /api/v1/auth/sessions/{id}` revokes one of your own tokens; another user's id returns `404`.
 - A password reset or a password change revokes **all** of the user's tokens.
+- Old tokens that were created before the expiry feature are backfilled by the `2026_11_16_000002` migration with `created_at` plus `TOKEN_TTL_MINUTES`, so no session stays valid forever.
 - `DELETE /api/v1/admin/users/{user}/tokens` force-logs-out a user; it is audited.
 - The frontend stores the token in `localStorage`; a `401` clears it and lands on `/login` with a short message.
 
 ### AI token accounting
 
-- Every attempt writes `ai_requests`: feature, driver, model, input/output/total tokens, `tokens_estimated`, latency, status (`success`, `error`, `blocked`, `rate_limited`, `fallback`), error code, prompt length/hash, and `created_at`.
+- Every attempt writes `ai_requests`: feature, driver, model, input/output/total tokens, `tokens_estimated`, latency, status (`success`, `error`, `blocked`, `rate_limited`, `fallback`), error code, provider HTTP status, a sanitized provider message, prompt length/hash, and `created_at`.
+- Provider failures are classified: `not_configured`, `auth_failed` (401/403), `model_not_found` (404), `rate_limited_upstream` (429), `provider_error` (5xx), `bad_request` (400), `timeout`, `invalid_response`, and `empty_response`. Provider messages are truncated to 200 characters and the configured API key is redacted before they are stored, logged, or shown. Students only ever see the friendly fallback; the details appear on `/admin/ai` under "last provider error".
+- `POST /api/v1/admin/ai/test` (admin-only, `throttle:10,1`) sends one tiny prompt with a ceiling of 20 output tokens. It returns `{ok, error_code, http_status, latency_ms, model}`, is counted in `ai_requests` as feature `ai_test`, and writes an `ai.test` audit entry. It never returns the key. It only needs the master AI switch, so it still works while the assistant or summary feature is off.
 - Missing provider usage is estimated with `characters / 4` and flagged as estimated.
 - Limits are enforced in `AiGateway` before the provider call:
   1. Feature disabled or unconfigured → fallback, no provider call.
@@ -82,6 +85,7 @@ How EventHub covers the CIA triad, accountability, tokens, admin controls, and t
 | Audit log and "Verify log" | no | no | yes |
 | Users list and force logout | no | no | yes |
 | AI settings and AI usage | no | no | yes |
+| AI connection test (`POST /admin/ai/test`, audited) | no | no | yes |
 | AI analytics summary | no | no | yes |
 | Ask the assistant | no | yes | yes (API; the page is in the student shell) |
 
@@ -95,10 +99,20 @@ How EventHub covers the CIA triad, accountability, tokens, admin controls, and t
 | Personal data leaving the server | The assistant sees only upcoming published events (id, title, description truncated to 300 chars, organizer, location, times, slots left). It never sees the asking user or any registration. The analytics summary sees only aggregates (KPIs, per-event fill and cancellation counts and rates, insight titles, per-day totals). |
 | Cost abuse | 10 requests/minute per user, a daily token budget per user, a 10-minute cache on AI-generated summaries per data fingerprint, and admin switches that disable a feature. |
 | Hallucinated answers or event ids | Answers are plain text with a visible "AI-generated. It can be wrong" label; event ids are intersected with the exact list sent; if JSON parsing fails the raw text is shown with no events. |
-| Provider outage or a bad key | A timeout plus one retry, then a fallback: the assistant returns keyword-matched events (`source: fallback`) and the analytics card returns the rule-based summary (`source: rules`). |
+| Provider outage or a bad key | Connection errors and 5xx responses get one retry; 4xx responses return immediately so the system-role retry can run. Failures are classified and stored with the HTTP status and a sanitized message, the admin sees them on `/admin/ai`, and the student gets the keyword-matched fallback (`source: fallback`). The analytics card returns the rule-based summary (`source: rules`). The raw provider error is never shown to a student. |
 | XSS through model output | AI text is rendered as React text, never with `dangerouslySetInnerHTML` (frontend test asserts a `<script>` string stays text). |
 | Secret leakage | The key is read with `config()` server-side only, never returned by an endpoint, and never placed in the frontend bundle. Settings updates log field names and values but not the key. |
 | Deleting a user to hide activity | Audit rows are immutable and the user foreign key is `restrictOnDelete`; AI usage rows keep their totals. |
+
+## Floating chatbot
+
+The student chatbot is a second entry point to the assistant, not a second pipeline:
+
+- It calls the same `POST /api/v1/ai/assistant` endpoint through the same `useAssistant` hook as the `/assistant` page, so the same server-side guards apply: master and assistant switches, 10 requests/minute per user, the daily token budget, the audit entry, and the `ai_requests` row.
+- The model sees exactly the same minimized payload as the assistant page: upcoming published events only (id, title, description truncated to 300 characters, organizer, location, times, slots left). It never receives the student's name, email, student id, registration, or token.
+- The conversation lives only in React state in the browser. It is not written to `localStorage` or the server, and it is cleared on logout and by "New chat".
+- The launcher is rendered only for the student role, and is hidden on `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/assistant`, and every `/admin` page.
+- Answers render as React text (no HTML), carry the "AI-generated" or fallback label, and the message list is announced with `aria-live="polite"`. The panel closes with Escape and returns focus to the launcher.
 
 ## Known limits
 

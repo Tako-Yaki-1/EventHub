@@ -66,6 +66,8 @@ Route::prefix('v1')->group(function () {
             Route::get('admin/ai/usage', [AdminAiController::class, 'usage'])
                 ->middleware('throttle:60,1');
             Route::post('admin/ai/analytics-summary', [AdminAiController::class, 'summary']);
+            Route::post('admin/ai/test', [AdminAiController::class, 'test'])
+                ->middleware('throttle:10,1');
 
             Route::prefix('admin/analytics')->group(function () {
                 Route::get('summary', [AnalyticsController::class, 'summary']);

@@ -118,9 +118,9 @@ PROMPT;
      */
     private function parse(string $text): ?array
     {
-        $decoded = json_decode($text, true);
+        $decoded = AiJson::decode($text);
 
-        if (! is_array($decoded)) {
+        if ($decoded === null) {
             return null;
         }
 

@@ -1,7 +1,7 @@
 import api from './client'
 
-export async function listMyRegistrations() {
-  const { data } = await api.get('/my/registrations')
+export async function listMyRegistrations(params) {
+  const { data } = await api.get('/my/registrations', { params })
   return data
 }
 

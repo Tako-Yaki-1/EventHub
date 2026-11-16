@@ -1,17 +1,32 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, SlidersHorizontal } from 'lucide-react'
+import { AlertCircle, Bot, CheckCircle2, PlugZap, SlidersHorizontal } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { getAiSettings, getAiUsage, updateAiSettings } from '../../api/ai'
+import { getAiSettings, getAiUsage, testAiConnection, updateAiSettings } from '../../api/ai'
 import Button from '../../components/ui/Button'
 import EmptyState from '../../components/ui/EmptyState'
 import Input from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
+import { formatDateTime } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import ChartCard from './ChartCard'
 
 const axisTick = { fontSize: 11, fill: 'var(--color-muted)' }
+
+const errorHints = {
+  not_configured:
+    'Set AI_API_KEY and AI_MODEL in backend/.env, run php artisan config:clear, then restart the API.',
+  ai_disabled: 'AI is switched off. Turn on the master switch above.',
+  auth_failed: 'The provider rejected the key. Check AI_API_KEY for typos or an expired key.',
+  model_not_found: 'The provider does not know AI_MODEL. Use the exact model id from the provider.',
+  rate_limited_upstream: 'The provider is rate limiting this key. Wait a minute, then test again.',
+  provider_error: 'The provider had a server problem. Try again in a moment.',
+  bad_request: 'The provider rejected the request. Check AI_MODEL and AI_BASE_URL.',
+  timeout: 'The provider did not answer in time. Check the network or raise AI_TIMEOUT_SECONDS.',
+  invalid_response: 'The provider did not answer with JSON. Check AI_BASE_URL.',
+  empty_response: 'The provider returned an empty answer. Try another model.',
+}
 
 function shortDate(value) {
   return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
@@ -38,6 +53,15 @@ export default function AiSettings() {
     onError: (error) => toast.error(errorMessage(error, 'Could not save the AI settings.')),
   })
 
+  const connectionTest = useMutation({
+    mutationFn: testAiConnection,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-usage'] })
+    },
+    onError: (error) => toast.error(errorMessage(error, 'Could not test the AI connection.')),
+  })
+
   if (settingsQuery.isLoading) {
     return (
       <div className="space-y-4">
@@ -61,6 +85,8 @@ export default function AiSettings() {
 
   const change = (key, value) => setDraft({ ...form, [key]: value })
   const usage = usageQuery.data
+  const lastError = settings?.last_error
+  const testResult = connectionTest.data
 
   return (
     <div className="space-y-5">
@@ -145,13 +171,6 @@ export default function AiSettings() {
           />
         </div>
 
-        {!form.configured && (
-          <p className="text-xs text-muted">
-            No AI key is configured, so both features use their fallbacks. Set AI_API_KEY and
-            AI_MODEL in backend/.env to turn on real answers.
-          </p>
-        )}
-
         <div className="flex items-center gap-2">
           <Button type="submit" loading={save.isPending}>
             Save settings
@@ -163,6 +182,74 @@ export default function AiSettings() {
           )}
         </div>
       </form>
+
+      <section
+        aria-labelledby="ai-connection-heading"
+        className="space-y-3 rounded-card border border-card-border bg-white p-4"
+      >
+        <h2
+          id="ai-connection-heading"
+          className="flex items-center gap-2 text-sm font-semibold text-ink"
+        >
+          <PlugZap className="size-4 text-primary" aria-hidden="true" />
+          Provider connection
+        </h2>
+
+        <p className="text-sm text-ink">
+          {form.configured
+            ? `Configured: ${form.driver} driver, model ${form.model}.`
+            : 'Not configured: set AI_API_KEY and AI_MODEL in backend/.env.'}
+        </p>
+
+        {lastError && (
+          <div className="rounded-btn border border-danger-border bg-page px-3 py-2 text-sm">
+            <p className="flex items-center gap-1.5 font-medium text-danger">
+              <AlertCircle className="size-4" aria-hidden="true" />
+              Last provider error: {lastError.code}
+              {lastError.http_status ? ` (HTTP ${lastError.http_status})` : ''}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              {formatDateTime(lastError.at)}
+              {lastError.message ? ` · ${lastError.message}` : ''}
+            </p>
+            {errorHints[lastError.code] && (
+              <p className="mt-1 text-xs text-muted">{errorHints[lastError.code]}</p>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="secondary"
+            loading={connectionTest.isPending}
+            onClick={() => connectionTest.mutate()}
+          >
+            Test connection
+          </Button>
+          <span className="text-xs text-muted">
+            Sends one tiny prompt, up to 20 output tokens. It counts in usage and the audit log.
+          </span>
+        </div>
+
+        {testResult?.ok && (
+          <p className="flex items-center gap-1.5 text-sm text-success">
+            <CheckCircle2 className="size-4" aria-hidden="true" />
+            Connected to {testResult.model} in {testResult.latency_ms} ms.
+          </p>
+        )}
+
+        {testResult && !testResult.ok && (
+          <div className="rounded-btn border border-danger-border bg-page px-3 py-2 text-sm">
+            <p className="font-medium text-danger">
+              The test failed: {testResult.error_code}
+              {testResult.http_status ? ` (HTTP ${testResult.http_status})` : ''}
+            </p>
+            {errorHints[testResult.error_code] && (
+              <p className="mt-1 text-xs text-muted">{errorHints[testResult.error_code]}</p>
+            )}
+          </div>
+        )}
+      </section>
 
       <section aria-labelledby="ai-usage-heading" className="space-y-4">
         <div>

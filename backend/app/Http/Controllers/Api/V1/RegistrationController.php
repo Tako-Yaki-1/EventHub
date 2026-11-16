@@ -11,29 +11,55 @@ use App\Http\Resources\RegistrationResource;
 use App\Models\Event;
 use App\Models\Registration;
 use App\Services\AuditLogger;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
 
 class RegistrationController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'upcoming_page' => ['sometimes', 'integer', 'min:1'],
+            'past_page' => ['sometimes', 'integer', 'min:1'],
+            'cancelled_page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
         $registered = RegistrationStatus::Registered->value;
 
-        $registrations = Registration::query()
+        // The split and the ordering live here so each section paginates correctly on its own.
+        $base = fn (): Builder => Registration::query()
             ->select('registrations.*')
             ->leftJoin('events', 'events.id', '=', 'registrations.event_id')
             ->with(['event' => fn ($query) => $query->withRegisteredCount()])
-            ->where('registrations.user_id', $request->user()->id)
-            // Active registrations first, soonest event first; then cancelled, most recent first.
-            ->orderByRaw('case when registrations.status = ? then 0 else 1 end', [$registered])
-            ->orderByRaw('case when registrations.status = ? then events.starts_at end asc', [$registered])
-            ->orderByRaw('case when registrations.status <> ? then registrations.cancelled_at end desc', [$registered])
-            ->paginate(12);
+            ->where('registrations.user_id', $request->user()->id);
 
-        return RegistrationResource::collection($registrations);
+        $upcoming = $base()
+            ->where('registrations.status', $registered)
+            ->where('events.starts_at', '>', now())
+            ->orderBy('events.starts_at')
+            ->orderBy('registrations.id')
+            ->paginate(12, ['*'], 'upcoming_page', (int) ($validated['upcoming_page'] ?? 1));
+
+        $past = $base()
+            ->where('registrations.status', $registered)
+            ->where('events.starts_at', '<=', now())
+            ->orderByDesc('events.starts_at')
+            ->orderByDesc('registrations.id')
+            ->paginate(12, ['*'], 'past_page', (int) ($validated['past_page'] ?? 1));
+
+        $cancelled = $base()
+            ->where('registrations.status', RegistrationStatus::Cancelled->value)
+            ->orderByDesc('registrations.cancelled_at')
+            ->orderByDesc('registrations.id')
+            ->paginate(12, ['*'], 'cancelled_page', (int) ($validated['cancelled_page'] ?? 1));
+
+        return response()->json([
+            'upcoming' => RegistrationResource::collection($upcoming)->response()->getData(true),
+            'past' => RegistrationResource::collection($past)->response()->getData(true),
+            'cancelled' => RegistrationResource::collection($cancelled)->response()->getData(true),
+        ]);
     }
 
     public function store(

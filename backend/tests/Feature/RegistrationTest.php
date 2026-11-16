@@ -264,8 +264,8 @@ class RegistrationTest extends TestCase
             ->assertJsonPath('data.slots_left', 0);
 
         $this->getJson('/api/v1/my/registrations')
-            ->assertJsonPath('data.0.event.registered_count', 1)
-            ->assertJsonPath('data.0.event.slots_left', 0);
+            ->assertJsonPath('upcoming.data.0.event.registered_count', 1)
+            ->assertJsonPath('upcoming.data.0.event.slots_left', 0);
     }
 
     public function test_an_admin_cannot_use_student_registration_routes(): void
@@ -277,38 +277,83 @@ class RegistrationTest extends TestCase
         $this->deleteJson("/api/v1/registrations/{$registration->id}")->assertForbidden();
     }
 
-    public function test_my_registrations_returns_registered_and_cancelled_items(): void
+    public function test_my_registrations_returns_upcoming_past_and_cancelled_sections(): void
     {
         $student = User::factory()->create();
         Sanctum::actingAs($student);
 
-        $registered = Registration::factory()->create(['user_id' => $student->id]);
-        $cancelled = Registration::factory()->cancelled()->create(['user_id' => $student->id]);
+        $upcoming = Registration::factory()->create([
+            'user_id' => $student->id,
+            'event_id' => Event::factory()->create([
+                'starts_at' => now()->addDays(3),
+                'ends_at' => now()->addDays(3)->addHours(2),
+            ])->id,
+        ]);
+        $past = Registration::factory()->create([
+            'user_id' => $student->id,
+            'event_id' => Event::factory()->create([
+                'starts_at' => now()->subDays(3),
+                'ends_at' => now()->subDays(3)->addHours(2),
+            ])->id,
+        ]);
+        $cancelled = Registration::factory()->cancelled()->create([
+            'user_id' => $student->id,
+            'cancelled_at' => now()->subHour(),
+        ]);
         Registration::factory()->create();
 
         $this->getJson('/api/v1/my/registrations')
             ->assertOk()
-            ->assertJsonCount(2, 'data')
-            ->assertJsonFragment(['id' => $registered->id, 'status' => 'registered'])
-            ->assertJsonFragment(['id' => $cancelled->id, 'status' => 'cancelled']);
+            ->assertJsonCount(1, 'upcoming.data')
+            ->assertJsonCount(1, 'past.data')
+            ->assertJsonCount(1, 'cancelled.data')
+            ->assertJsonPath('upcoming.data.0.id', $upcoming->id)
+            ->assertJsonPath('past.data.0.id', $past->id)
+            ->assertJsonPath('cancelled.data.0.id', $cancelled->id)
+            ->assertJsonPath('upcoming.meta.total', 1)
+            ->assertJsonPath('past.meta.total', 1)
+            ->assertJsonPath('cancelled.meta.total', 1);
     }
 
-    public function test_my_registrations_are_ordered_by_event_date_then_cancellation_date(): void
+    public function test_my_registrations_are_ordered_per_section(): void
     {
         $student = User::factory()->create();
         Sanctum::actingAs($student);
 
-        $registeredLaterEvent = $this->registerFor($student, now()->addDays(10), now()->subDay());
-        $registeredSoonerEvent = $this->registerFor($student, now()->addDays(2), now()->subDays(5));
+        $upcomingLater = $this->registerFor($student, now()->addDays(10), now()->subDay());
+        $upcomingSooner = $this->registerFor($student, now()->addDays(2), now()->subDays(5));
+        $pastOlder = $this->registerFor($student, now()->subDays(10), now()->subDays(20));
+        $pastNewer = $this->registerFor($student, now()->subDays(2), now()->subDays(3));
         $cancelledOlder = $this->cancelFor($student, now()->subDays(4));
         $cancelledNewer = $this->cancelFor($student, now()->subHour());
 
         $this->getJson('/api/v1/my/registrations')
             ->assertOk()
-            ->assertJsonPath('data.0.id', $registeredSoonerEvent->id)
-            ->assertJsonPath('data.1.id', $registeredLaterEvent->id)
-            ->assertJsonPath('data.2.id', $cancelledNewer->id)
-            ->assertJsonPath('data.3.id', $cancelledOlder->id);
+            ->assertJsonPath('upcoming.data.0.id', $upcomingSooner->id)
+            ->assertJsonPath('upcoming.data.1.id', $upcomingLater->id)
+            ->assertJsonPath('past.data.0.id', $pastNewer->id)
+            ->assertJsonPath('past.data.1.id', $pastOlder->id)
+            ->assertJsonPath('cancelled.data.0.id', $cancelledNewer->id)
+            ->assertJsonPath('cancelled.data.1.id', $cancelledOlder->id);
+    }
+
+    public function test_each_registration_section_paginates_on_its_own(): void
+    {
+        $student = User::factory()->create();
+        Sanctum::actingAs($student);
+
+        foreach (range(1, 13) as $day) {
+            $this->registerFor($student, now()->addDays($day), now()->subDay());
+        }
+
+        $this->getJson('/api/v1/my/registrations?upcoming_page=2')
+            ->assertOk()
+            ->assertJsonCount(1, 'upcoming.data')
+            ->assertJsonPath('upcoming.meta.current_page', 2)
+            ->assertJsonPath('upcoming.meta.last_page', 2)
+            ->assertJsonPath('upcoming.meta.total', 13)
+            ->assertJsonCount(0, 'past.data')
+            ->assertJsonCount(0, 'cancelled.data');
     }
 
     private function registerFor(User $student, Carbon $startsAt, Carbon $registeredAt): Registration

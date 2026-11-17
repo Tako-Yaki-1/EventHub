@@ -89,7 +89,7 @@ Open `http://localhost:5173` and log in with one of the demo accounts below.
 | Admin | `admin@eventhub.test` | `password` |
 | Student | `jan.nino@school.edu` or `2023-00123` | `password` |
 
-Seeded data is relative to the day you seed: three named events plus several upcoming and past events, about 60 students, and registrations/cancellations spread over 30 days.
+Seeded data: about 60 students, eight upcoming events on fixed dates (Nov 23–30, 2026), three past events, and registrations/cancellations spread over the preceding weeks.
 
 ## Security and AI
 
@@ -233,7 +233,25 @@ frontend/src
 - **A student never sees AI provider errors.** That is intended: they get the friendly fallback plus matching events. Diagnose from `/admin/ai`.
 - **Changes to `backend\.env` have no effect.** Run `php artisan config:clear` and restart `php artisan serve`.
 
+## Deploy online (Laravel Cloud + Vercel)
+
+Backend on [Laravel Cloud](https://cloud.laravel.com) with its managed MySQL, frontend on [Vercel](https://vercel.com).
+
+1. **Push the repo to GitHub.** Make sure `backend/.env` is not in the repo (`git ls-files backend/.env` should print nothing); only `.env.example` belongs there.
+2. **Laravel Cloud.** Create an application from the repo and select the `backend` directory. Add a MySQL database. Set the environment variables from the production block in `backend/.env.example` (generate `APP_KEY` with `php artisan key:generate --show`, and set `SEED_ADMIN_PASSWORD` and `SEED_STUDENT_PASSWORD` before seeding). Set the deploy command to `php artisan migrate --force` and deploy. Then run `php artisan db:seed --force` once from the environment's command runner — it is safe to run again because the admin, the demo student, and the named events are upserted.
+3. **Vercel.** Import the repo, set Root Directory to `frontend`, add `VITE_API_URL=https://<backend-url>/api/v1`, and deploy. `frontend/vercel.json` rewrites every path to `index.html`, so refreshing `/events/3` works.
+4. **Point CORS at Vercel.** Set `FRONTEND_URL` on Laravel Cloud to the exact Vercel URL (no trailing slash) and redeploy the backend.
+5. **Smoke test.** Log in as the admin and as a student, then open Admin → AI and press **Test connection**.
+
+Notes for the online demo:
+
+- Password-reset emails are only sent when a real mail provider is configured (`MAIL_*`); locally they are written to the log.
+- The first request after the app has been idle can be slow while it wakes from hibernation.
+- Only `FRONTEND_URL` is allowed by CORS, so Vercel preview URLs (per-deployment domains) are blocked; use the main URL or add the preview origin to `config/cors.php`.
+
 ## Notes and limits
+
+- The seeded upcoming events use fixed dates (Nov 23–30, 2026), so after Nov 30, 2026 they appear under "Past"; re-seed with new dates for a demo.
 
 - Dates are stored UTC and displayed in the browser's local timezone.
 - Access tokens are kept in `localStorage` and sent as a Bearer header; an XSS bug on the site would expose them.

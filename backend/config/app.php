@@ -135,4 +135,17 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Seeded demo accounts
+    |--------------------------------------------------------------------------
+    |
+    | `php artisan db:seed` uses these passwords for the admin and the demo
+    | student. They fall back to the local "password" used in development.
+    |
+    */
+
+    'seed_admin_password' => env('SEED_ADMIN_PASSWORD', 'password'),
+    'seed_student_password' => env('SEED_STUDENT_PASSWORD', 'password'),
+
 ];

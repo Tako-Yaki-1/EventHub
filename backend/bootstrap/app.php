@@ -18,6 +18,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => EnsureRole::class,
         ]);
+
+        // Laravel Cloud terminates HTTPS in front of the app: trust its proxy headers
+        // so request()->ip() and generated URLs reflect the real client and scheme.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // An audit trail matters most when someone is refused: record every 403.
